@@ -1,4 +1,4 @@
-module pe #(
+module processing_element #(
     parameter int DATA_WIDTH = 8,
     parameter int ACC_WIDTH  = 32
 )(

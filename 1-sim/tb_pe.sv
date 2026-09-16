@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns / 1ps
 
 module tb_pe;
 
@@ -8,16 +8,17 @@ module tb_pe;
 
     logic clk;
     logic rst_n;
-
-    logic valid_in;
     logic clear_acc;
 
     logic signed [DATA_WIDTH-1:0] activation_in;
-    logic signed [DATA_WIDTH-1:0] weight_in;
-
+    logic                         activation_valid_in;
     logic signed [DATA_WIDTH-1:0] activation_out;
+    logic                         activation_valid_out;
+
+    logic signed [DATA_WIDTH-1:0] weight_in;
+    logic                         weight_valid_in;
     logic signed [DATA_WIDTH-1:0] weight_out;
-    logic                         valid_out;
+    logic                         weight_valid_out;
 
     logic signed [ACC_WIDTH-1:0] accumulator_out;
 
@@ -25,331 +26,208 @@ module tb_pe;
     integer fail_count;
 
 
-
     processing_element #(
-        .DATA_WIDTH (DATA_WIDTH),
-        .ACC_WIDTH  (ACC_WIDTH)
+        .DATA_WIDTH(DATA_WIDTH),
+        .ACC_WIDTH (ACC_WIDTH)
     ) dut (
-        .clk             (clk),
-        .rst_n           (rst_n),
-
-        .valid_in        (valid_in),
-        .clear_acc       (clear_acc),
-
-        .activation_in   (activation_in),
-        .weight_in       (weight_in),
-
-        .activation_out  (activation_out),
-        .weight_out      (weight_out),
-        .valid_out       (valid_out),
-
-        .accumulator_out (accumulator_out)
+        .clk                  (clk),
+        .rst_n                (rst_n),
+        .clear_acc            (clear_acc),
+        .activation_in        (activation_in),
+        .activation_valid_in  (activation_valid_in),
+        .activation_out       (activation_out),
+        .activation_valid_out (activation_valid_out),
+        .weight_in            (weight_in),
+        .weight_valid_in      (weight_valid_in),
+        .weight_out           (weight_out),
+        .weight_valid_out     (weight_valid_out),
+        .accumulator_out      (accumulator_out)
     );
 
 
     initial begin
         clk = 1'b0;
-
-        forever #(CLK_PERIOD/2)
-            clk = ~clk;
+        forever #(CLK_PERIOD/2) clk = ~clk;
     end
 
 
     task automatic check_acc(
         input logic signed [ACC_WIDTH-1:0] expected,
-        input string test_name
+        input string name
     );
         begin
             if ($signed(accumulator_out) === $signed(expected)) begin
-                $display(
-                    "PASS: %-30s expected=%0d actual=%0d",
-                    test_name,
-                    $signed(expected),
-                    $signed(accumulator_out)
-                );
-
+                $display("PASS: %-35s expected=%0d actual=%0d",
+                         name, $signed(expected), $signed(accumulator_out));
                 pass_count++;
             end
             else begin
-                $display(
-                    "FAIL: %-30s expected=%0d actual=%0d",
-                    test_name,
-                    $signed(expected),
-                    $signed(accumulator_out)
-                );
-
+                $display("FAIL: %-35s expected=%0d actual=%0d",
+                         name, $signed(expected), $signed(accumulator_out));
                 fail_count++;
             end
         end
     endtask
 
-    task automatic check_forwarding(
-        input logic signed [DATA_WIDTH-1:0] expected_activation,
-        input logic signed [DATA_WIDTH-1:0] expected_weight,
-        input logic                         expected_valid,
-        input string                        test_name
-    );
-        begin
-            if (
-                ($signed(activation_out) === $signed(expected_activation)) &&
-                ($signed(weight_out)     === $signed(expected_weight))     &&
-                (valid_out               === expected_valid)
-            ) begin
 
-                $display(
-                    "PASS: %-30s A=%0d W=%0d valid=%0b",
-                    test_name,
-                    $signed(activation_out),
-                    $signed(weight_out),
-                    valid_out
-                );
-
-                pass_count++;
-            end
-            else begin
-
-                $display(
-                    "FAIL: %-30s expected A=%0d W=%0d valid=%0b | got A=%0d W=%0d valid=%0b",
-                    test_name,
-                    $signed(expected_activation),
-                    $signed(expected_weight),
-                    expected_valid,
-                    $signed(activation_out),
-                    $signed(weight_out),
-                    valid_out
-                );
-
-                fail_count++;
-            end
-        end
-    endtask
-
-    task automatic apply_mac(
+    task automatic apply_inputs(
         input logic signed [DATA_WIDTH-1:0] activation,
-        input logic signed [DATA_WIDTH-1:0] weight
+        input logic                         activation_valid,
+        input logic signed [DATA_WIDTH-1:0] weight,
+        input logic                         weight_valid
     );
         begin
             @(negedge clk);
 
-            activation_in = activation;
-            weight_in     = weight;
-            valid_in      = 1'b1;
-            clear_acc     = 1'b0;
+            activation_in       = activation;
+            activation_valid_in = activation_valid;
+
+            weight_in           = weight;
+            weight_valid_in     = weight_valid;
+
+            clear_acc = 1'b0;
 
             @(posedge clk);
-
-            // wait for nonblocking assignments to update
             #1;
         end
     endtask
+
+
+    task automatic clear_accumulator;
+        begin
+            @(negedge clk);
+
+            clear_acc            = 1'b1;
+            activation_valid_in  = 1'b0;
+            weight_valid_in      = 1'b0;
+
+            @(posedge clk);
+            #1;
+
+            @(negedge clk);
+            clear_acc = 1'b0;
+        end
+    endtask
+
 
     initial begin
 
         pass_count = 0;
         fail_count = 0;
 
-        rst_n         = 1'b0;
-        valid_in      = 1'b0;
-        clear_acc     = 1'b0;
-        activation_in = '0;
-        weight_in     = '0;
+        rst_n               = 1'b0;
+        clear_acc           = 1'b0;
+        activation_in       = '0;
+        activation_valid_in = 1'b0;
+        weight_in           = '0;
+        weight_valid_in     = 1'b0;
 
-        $display("\n========================================");
-        $display("TEST 1: RESET");
-        $display("========================================");
+        $display("\nTEST 1: RESET");
 
         @(posedge clk);
         #1;
 
-        check_acc(32'sd0, "Accumulator reset");
+        check_acc(0, "Reset accumulator");
 
-        check_forwarding(
-            8'sd0,
-            8'sd0,
-            1'b0,
-            "Pipeline reset"
-        );
+        if ((activation_valid_out === 1'b0) &&
+            (weight_valid_out === 1'b0)) begin
+            $display("PASS: Reset valid outputs");
+            pass_count++;
+        end
+        else begin
+            $display("FAIL: Reset valid outputs");
+            fail_count++;
+        end
 
-
-        // release reset
         @(negedge clk);
         rst_n = 1'b1;
 
+        $display("\nTEST 2: BOTH OPERANDS VALID");
 
-        $display("\n========================================");
-        $display("TEST 2: POSITIVE x POSITIVE");
-        $display("========================================");
+        apply_inputs(3, 1'b1, 2, 1'b1);
+        check_acc(6, "3 * 2");
 
-        apply_mac(
-            8'sd3,
-            8'sd2
-        );
 
-        check_acc(
-            32'sd6,
-            "3 * 2"
-        );
+        $display("\nTEST 3: ACTIVATION ONLY");
 
-        check_forwarding(
-            8'sd3,
-            8'sd2,
-            1'b1,
-            "Forward 3 and 2"
-        );
+        apply_inputs(50, 1'b1, 50, 1'b0);
+        check_acc(6, "Weight invalid prevents MAC");
 
-        $display("\n========================================");
-        $display("TEST 3: POSITIVE x NEGATIVE");
-        $display("========================================");
 
-        apply_mac(
-            8'sd4,
-            -8'sd1
-        );
+        $display("\nTEST 4: WEIGHT ONLY");
 
-        check_acc(
-            32'sd2,
-            "6 + (4 * -1)"
-        );
+        apply_inputs(50, 1'b0, 50, 1'b1);
+        check_acc(6, "Activation invalid prevents MAC");
 
-        $display("\n========================================");
-        $display("TEST 4: NEGATIVE x POSITIVE");
-        $display("========================================");
 
-        apply_mac(
-            -8'sd2,
-            8'sd5
-        );
+        $display("\nTEST 5: BOTH INVALID");
 
-        check_acc(
-            -32'sd8,
-            "2 + (-2 * 5)"
-        );
+        apply_inputs(100, 1'b0, 100, 1'b0);
+        check_acc(6, "Both invalid prevent MAC");
 
-        $display("\n========================================");
-        $display("TEST 5: NEGATIVE x NEGATIVE");
-        $display("========================================");
 
-        apply_mac(
-            -8'sd3,
-            -8'sd4
-        );
+        $display("\nTEST 6: VALID PROPAGATION");
 
-        check_acc(
-            32'sd4,
-            "-8 + (-3 * -4)"
-        );
+        apply_inputs(-7, 1'b1, 12, 1'b0);
 
-        $display("\n========================================");
-        $display("TEST 6: INVALID CYCLE");
-        $display("========================================");
+        if (($signed(activation_out) === -7) &&
+            (activation_valid_out === 1'b1) &&
+            ($signed(weight_out) === 12) &&
+            (weight_valid_out === 1'b0)) begin
+
+            $display("PASS: Independent valid propagation");
+            pass_count++;
+
+        end
+        else begin
+            $display("FAIL: Independent valid propagation");
+            fail_count++;
+        end
+
+
+        $display("\nTEST 7: CLEAR");
+
+        clear_accumulator();
+        check_acc(0, "Clear accumulator");
+        
+
+        $display("\nTEST 8: SIGNED DOT PRODUCT");
+
+        apply_inputs( 3, 1'b1,  2, 1'b1);
+        apply_inputs( 4, 1'b1, -1, 1'b1);
+        apply_inputs(-2, 1'b1,  5, 1'b1);
+        apply_inputs( 6, 1'b1,  3, 1'b1);
+
+        check_acc(10, "Signed dot product");
+
+
+        $display("\nTEST 9: INT8 EXTREME");
+
+        clear_accumulator();
+
+        apply_inputs(-128, 1'b1, -128, 1'b1);
+        check_acc(16384, "-128 * -128");
+
+
+        $display("\nTEST 10: CLEAR PRIORITY");
 
         @(negedge clk);
 
-        activation_in = 8'sd100;
-        weight_in     = 8'sd100;
-        valid_in      = 1'b0;
-        clear_acc     = 1'b0;
+        activation_in       = 50;
+        activation_valid_in = 1'b1;
+        weight_in           = 50;
+        weight_valid_in     = 1'b1;
+        clear_acc           = 1'b1;
 
         @(posedge clk);
         #1;
 
-        check_acc(
-            32'sd4,
-            "Invalid does not accumulate"
-        );
+        check_acc(0, "Clear overrides valid MAC");
 
-        check_forwarding(
-            8'sd100,
-            8'sd100,
-            1'b0,
-            "Invalid operands still forward"
-        );
-
-        $display("\n========================================");
-        $display("TEST 7: CLEAR ACCUMULATOR");
-        $display("========================================");
-
-        @(negedge clk);
-
-        clear_acc = 1'b1;
-        valid_in  = 1'b0;
-
-        @(posedge clk);
-        #1;
-
-        check_acc(
-            32'sd0,
-            "Clear accumulator"
-        );
-
-        @(negedge clk);
-
-        clear_acc = 1'b0;
-
-        $display("\n========================================");
-        $display("TEST 8: DOT PRODUCT");
-        $display("========================================");
-
-        apply_mac( 8'sd3,  8'sd2);
-        apply_mac( 8'sd4, -8'sd1);
-        apply_mac(-8'sd2,  8'sd5);
-        apply_mac( 8'sd6,  8'sd3);
-
-        check_acc(
-            32'sd10,
-            "4-element dot product"
-        );
-
-        $display("\n========================================");
-        $display("TEST 9: INT8 CORNER CASE");
-        $display("========================================");
-
-        @(negedge clk);
-
-        clear_acc = 1'b1;
-        valid_in  = 1'b0;
-
-        @(posedge clk);
-        #1;
-
-        @(negedge clk);
-
-        clear_acc = 1'b0;
-
-        apply_mac(
-            -8'sd128,
-            -8'sd128
-        );
-
-        check_acc(
-            32'sd16384,
-            "-128 * -128"
-        );
-
-        $display("\n========================================");
-        $display("TEST 10: CLEAR PRIORITY");
-        $display("========================================");
-
-        @(negedge clk);
-
-        activation_in = 8'sd50;
-        weight_in     = 8'sd50;
-
-        valid_in  = 1'b1;
-        clear_acc = 1'b1;
-
-        @(posedge clk);
-        #1;
-
-        check_acc(
-            32'sd0,
-            "Clear overrides MAC"
-        );
 
         $display("\n========================================");
         $display("PE VERIFICATION RESULTS");
         $display("========================================");
-
         $display("PASS = %0d", pass_count);
         $display("FAIL = %0d", fail_count);
 
@@ -361,5 +239,4 @@ module tb_pe;
         $finish;
 
     end
-
 endmodule
